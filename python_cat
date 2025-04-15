@@ -1,0 +1,435 @@
+# NOTE: This script uses PySide6 for building a modern UI for Windows computers.
+# It replicates the file organizer app with categorized file organization and icons per section.
+
+from PySide6.QtWidgets import (
+    QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
+    QFileDialog, QCheckBox, QLineEdit, QGroupBox, QScrollArea, QMessageBox, QGridLayout,
+    QToolButton, QFrame, QSizePolicy, QStyleFactory, QProgressBar, QListWidget, QDialog
+)
+from PySide6.QtCore import Qt, QSettings
+from PySide6.QtGui import QFont, QColor, QPalette, QIcon
+import os
+import shutil
+import sys
+from pathlib import Path
+
+CATEGORY_MAP = {
+    "📄 Documents": dict(sorted({
+        "📚 LaTeX & Academic": {".tex", ".bib", ".ris", ".bbl"},
+        "📊 Spreadsheets (Open)": {".csv", ".ods"},
+        "📝 Word Processing (Open)": {".odt", ".rtf"},
+        "📽️ PowerPoint Presentations": {".ppt", ".pptx"},
+        "📊 Excel Spreadsheets": {".xls", ".xlsx"},
+        "📝 Word Documents": {".doc", ".docx"},
+        "📕 PDF Files": {".pdf"},
+        "📜 Text Files": {".txt", ".rtf"},
+        "🗒️ Markdown Files": {".md"},
+        "📚 Ebooks": {".epub", ".mobi", ".azw3"},
+    }.items(), key=lambda x: -len(x[0]))),
+    "🖼️ Media": dict(sorted({
+        "🖍️ Vector & Design Files": {".ai", ".eps", ".psd"},
+        "📷 Camera RAW (Extended)": {".dng", ".rw2", ".pef"},
+        "🔊 Lossless Audio": {".aiff", ".alac"},
+        "🌀 3D / Visual Media": {".blend", ".fbx", ".obj", ".dae"},
+        "🎚️ Audio Project Files": {".als", ".flp", ".logic", ".band"},
+        "📄 Subtitle Files": {".srt", ".vtt", ".sub", ".ass"},
+        "📷 RAW Image Files": {".raw", ".cr2", ".nef", ".orf", ".arw"},
+        "🎞️ Video Files": {".mp4", ".mov", ".avi", ".mkv", ".wmv", ".webm"},
+        "🖼️ Images": {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".svg", ".webp", ".heif", ".avif"},
+        "🎵 Audio Files": {".mp3", ".wav", ".aac", ".flac"},
+    }.items(), key=lambda x: -len(x[0]))),
+    "💻 Development": dict(sorted({
+        "🗃️ Version Control": {".gitignore", ".gitattributes", ".gitmodules"},
+        "📓 Notebooks": {".ipynb"},
+        "🧰 Tool Environments": {".venv", ".tox", ".pyproj"},
+        "🛠️ Project Files": {".sln", ".vcxproj", ".xcodeproj", ".csproj"},
+        "🔧 Build Files": {".make", ".cmake", ".ninja", ".gradle", ".build"},
+        "📦 Package Files": {".whl", ".egg", ".deb", ".rpm", ".apk", ".tar.gz", ".pkg"},
+        "🧪 Configuration Files": {".ini", ".env", ".cfg", ".toml", ".yml", ".yaml"},
+        "💾 Compiled Binaries": {".o", ".obj", ".bin", ".so", ".a", ".lib"},
+        "📜 Scripts": {".py", ".js", ".html", ".css", ".sh", ".bat", ".php", ".xml", ".json", ".asp", ".cgi"},
+        "⚙️ System Files": {".sys", ".dll", ".drv"},
+        "🧾 Log Files": {".log", ".out", ".err"},
+    }.items(), key=lambda x: -len(x[0]))),
+    "📦 Archives": dict(sorted({
+        "🔐 Encrypted Archives": {".aes", ".gpg", ".enc", ".p7m"},
+        "🧾 Installer Archives": {".cab", ".msu", ".pkg", ".xar"},
+        "📚 Disk Images": {".img", ".bin", ".cue", ".iso"},
+        "🧬 Compression Only": {".lz", ".lzma", ".bz2", ".zst"},
+        "💿 VM & Disk Images": {".vmdk", ".vdi", ".iso", ".ova", ".ovf", ".qcow2"},
+        "🕘 Backup Files": {".bak", ".swp", ".tmp", ".dmp"},
+        "🗜️ Archives": {".zip", ".rar", ".7z", ".tar", ".gz", ".tar.bz2", ".xz"},
+    }.items(), key=lambda x: -len(x[0]))),
+    "📁 Other": dict(sorted({
+        "📄 Docs & Licenses": {"LICENSE", "README", ".md", ".txt"},
+        "🛠️ Crash Dumps": {".crash", ".dmp", ".core"},
+        "🔗 Shortcuts": {".lnk", ".url"},
+        "📑 Office Templates": {".dotx", ".xltx", ".potx"},
+        "🧱 CAD Files": {".dwg", ".dxf", ".dgn"},
+        "🎲 Game Files": {".sav", ".pak", ".asset", ".unity", ".rpgproject"},
+        "📂 Metadata Files": {".nfo", ".sfv", ".md5", ".cue", ".par2"},
+        "🧩 Miscellaneous": {".bak", ".tmp", ".old", ".log", ".cfg"},
+        "⚙️ Executables & Installers": {".exe", ".msi", ".apk", ".dmg", ".pkg"},
+        "📧 Email Files": {".eml", ".msg"},
+        "📂 Database Files": {".db", ".sqlite", ".sql", ".mdb"},
+        "🔤 Fonts": {".ttf", ".otf", ".woff", ".woff2"},
+    }.items(), key=lambda x: -len(x[0]))),
+}
+
+class PreviewDialog(QDialog):
+    def __init__(self, moved_files, src, dst):
+        super().__init__()
+        self.setWindowTitle("📂 Dry Run Preview — File Movement Overview")
+        layout = QVBoxLayout()
+        layout.setSpacing(10)
+
+        layout.addWidget(QLabel(f"<b>📥 Source Folder:</b><br>{src}"))
+        layout.addWidget(QLabel(f"<b>📤 Destination Folder:</b><br>{dst}"))
+
+        
+        categorized = {}
+        for path in moved_files:
+            relative_path = os.path.relpath(path, dst)
+            folder = relative_path.split(os.sep)[0]  # top-level folder under destination
+            entry = f"{os.path.basename(path)} → {os.path.join(dst, folder)}"
+            categorized.setdefault(folder, []).append(entry)
+
+        for cat, files in categorized.items():
+            layout.addWidget(QLabel(f"<b>{cat}</b>"))
+            list_widget = QListWidget()
+            list_widget.addItems(files)
+            layout.addWidget(list_widget)
+
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn)
+        self.setLayout(layout)
+        self.resize(600, 400)
+
+class FileOrganizerApp(QWidget):
+    def _add_search_bar(self):
+        search_row = QHBoxLayout()
+        self.search_bar = QLineEdit()
+        self.search_bar.setPlaceholderText("🔍 Search categories...")
+        self.search_bar.textChanged.connect(self.filter_categories)
+        search_row.addWidget(self.search_bar)
+        return search_row
+
+    def filter_categories(self, text):
+        text = text.lower()
+        for cat, cb in self.category_checkboxes.items():
+            cb.setVisible(text in cat.lower())
+    def __init__(self):
+        super().__init__()
+        self.settings = QSettings("FileOrganizer", "Config")
+        self.setWindowTitle("📁 File Organizer 2.0")
+        self.setWindowIcon(QIcon.fromTheme("folder"))
+        self.resize(900, 700)
+        self.setFont(QFont("Segoe UI", 12))
+
+        self.source_path = QLineEdit()
+        self.dest_path = QLineEdit()
+        self.category_checkboxes = {}
+        self.group_frames = {}
+        
+
+        layout = QVBoxLayout()
+
+        # Top bar with dark mode toggle and header
+        top_bar = QHBoxLayout()
+        header_label = QLabel("<h2 style='font-family:Segoe UI;'>📂 File Organizer</h2>")
+        header_label.setTextFormat(Qt.RichText)
+        top_bar.addWidget(header_label)
+        top_bar.addStretch()
+        self.dark_mode_btn = QPushButton("🌙 Dark Mode")
+        self.dark_mode_btn.setIcon(QIcon.fromTheme("weather-clear-night"))
+        self.dark_mode_btn.setCheckable(True)
+        dark_mode = self.settings.value("dark_mode", True, type=bool)
+        self.dark_mode_btn.setChecked(dark_mode)
+        self.update_dark_icon(dark_mode)
+        self.dark_mode_btn.clicked.connect(self.toggle_dark_mode)
+        self.dark_mode_btn.setToolTip("Toggle Dark/Light Mode")
+        top_bar.addWidget(self.dark_mode_btn)
+        layout.addLayout(top_bar)
+
+        header_label = QLabel("<h2 style='font-family:Segoe UI;'>📂 File Organizer</h2>")
+        header_label.setTextFormat(Qt.RichText)
+        
+
+        desc_label = QLabel("""
+            <div style='font-family:Segoe UI; font-size:13px; padding:10px 0 10px 0;'>
+                <p style='margin-bottom:6px;'>Select a folder to organize your files by category. Each file type will be moved
+                into a labeled folder based on its extension (e.g., PDFs, Images, Videos).</p>
+                <p>In the <b>Destination Folder</b>, a new folder will be created for each selected category, and the matching files will be moved into their respective folders.</p>
+            </div>""")
+        desc_label.setTextFormat(Qt.RichText)
+        layout.addWidget(desc_label)
+
+        self.dark_mode_btn.setCheckable(True)
+        dark_mode = self.settings.value("dark_mode", True, type=bool)
+        self.dark_mode_btn.setChecked(dark_mode)
+        self.update_dark_icon(dark_mode)
+        self.dark_mode_btn.clicked.connect(self.toggle_dark_mode)
+        
+
+        layout.addLayout(self._folder_input("<b>📥 Source Folder:</b><br><small>This is the folder containing the files you want to organize.</small>", self.source_path, self.browse_source))
+        layout.addLayout(self._folder_input("<b>📤 Destination Folder:</b><br><small>This is where category folders will be created and files moved.</small>", self.dest_path, self.browse_destination))
+
+        layout.addLayout(self._add_search_bar())
+        layout.addWidget(self._build_category_ui())
+
+        self.progress = QProgressBar()
+        self.progress.setValue(0)
+        layout.addWidget(self.progress)
+
+        self.organize_btn = QPushButton("🧹 Organize Files")
+        self.organize_btn.setMinimumHeight(40)
+        self.organize_btn.setStyleSheet("font-size: 14px;")
+        self.organize_btn.clicked.connect(lambda: self.organize_files(dry_run=False))
+        layout.addWidget(self.organize_btn)
+
+        self.preview_btn = QPushButton("👁️ Preview (Dry Run)")
+        self.preview_btn.setToolTip("Simulate file moves without changing anything")
+        self.preview_btn.clicked.connect(lambda: self.organize_files(dry_run=True))
+        layout.addWidget(self.preview_btn)
+
+        self.sort_by_ext_checkbox = QCheckBox("📁 Sort into subfolders by file extension")
+        self.sort_by_date_checkbox = QCheckBox("🗓️ Sort into subfolders by year")
+        layout.addWidget(self.sort_by_ext_checkbox)
+        layout.addWidget(self.sort_by_date_checkbox)
+
+        self.status_label = QLabel("Status: Ready")
+        layout.addWidget(self.status_label)
+
+        reset_btn = QPushButton("🔄 Reset to Defaults")
+        reset_btn.clicked.connect(self.reset_to_defaults)
+        layout.addWidget(reset_btn)
+
+        self.setLayout(layout)
+        self.restore_settings()
+        self.toggle_dark_mode(init=True)
+
+    def _folder_input(self, label_html, path_line_edit, browse_func):
+        layout = QVBoxLayout()
+        label = QLabel(label_html)
+        label.setTextFormat(Qt.RichText)
+        layout.addWidget(label)
+        row = QHBoxLayout()
+        row.addWidget(path_line_edit)
+        browse_btn = QPushButton("📁")
+        browse_btn.clicked.connect(browse_func)
+        row.addWidget(browse_btn)
+        layout.addLayout(row)
+        return layout
+
+    def _build_category_ui(self):
+        group_box = QGroupBox("🗂️ Select Categories")
+        scroll_area = QScrollArea()
+        outer_layout = QVBoxLayout()
+
+        self.select_all_checkbox = QCheckBox("✅ Select All Categories")
+        self.select_all_checkbox.setChecked(True)
+        self.select_all_checkbox.stateChanged.connect(self.toggle_all_categories)
+        outer_layout.addWidget(self.select_all_checkbox)
+
+        scroll_widget = QWidget()
+        scroll_layout = QGridLayout()
+        scroll_layout.setHorizontalSpacing(30)
+        scroll_layout.setVerticalSpacing(20)
+        scroll_layout.setContentsMargins(0, 10, 0, 10)
+        scroll_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+
+        column_count = 5
+        for index, (group_name, cats) in enumerate(CATEGORY_MAP.items()):
+            frame = QFrame()
+            frame.setFrameShape(QFrame.NoFrame)
+            frame_layout = QVBoxLayout()
+            frame_layout.setSpacing(0)
+            frame_layout.setContentsMargins(0, 0, 0, 0)
+            frame_layout.setContentsMargins(0, 0, 0, 0)
+
+            group_toggle = QToolButton()
+            group_toggle.setText(group_name)
+            group_toggle.setCheckable(True)
+            group_toggle.setChecked(True)
+            group_toggle.setToolButtonStyle(Qt.ToolButtonTextOnly)
+            group_toggle.setArrowType(Qt.DownArrow)
+            group_toggle.clicked.connect(lambda checked, f=frame: f.setVisible(checked))
+
+            row, col = divmod(index, column_count)
+            scroll_layout.addWidget(group_toggle, row * 2, col, alignment=Qt.AlignLeft)
+            scroll_layout.addWidget(frame, row * 2 + 1, col, alignment=Qt.AlignLeft)
+            self.group_frames[group_name] = frame
+
+            for cat_name, extensions in cats.items():
+                tooltip = f"Extensions: {', '.join(extensions)}"
+                cb = QCheckBox(cat_name)
+                cb.setToolTip(tooltip)
+                cb.setChecked(True)
+                cb.setFont(QFont("Segoe UI", 12))
+                self.category_checkboxes[cat_name] = cb
+                frame_layout.addWidget(cb)
+
+            frame.setLayout(frame_layout)
+
+        scroll_widget.setLayout(scroll_layout)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setWidget(scroll_widget)
+        outer_layout.addWidget(scroll_area)
+        group_box.setLayout(outer_layout)
+        return group_box
+
+    def update_dark_icon(self, dark):
+        icon_name = "weather-clear-night" if dark else "weather-sunny"
+        self.dark_mode_btn.setIcon(QIcon.fromTheme(icon_name))
+
+    def toggle_dark_mode(self, init=False):
+        dark = self.dark_mode_btn.isChecked()
+        app = QApplication.instance()
+        if dark:
+            app.setStyle(QStyleFactory.create("Fusion"))
+            dark_palette = QPalette()
+            dark_palette.setColor(QPalette.Window, QColor(53, 53, 53))
+            dark_palette.setColor(QPalette.WindowText, Qt.white)
+            dark_palette.setColor(QPalette.Base, QColor(25, 25, 25))
+            dark_palette.setColor(QPalette.AlternateBase, QColor(53, 53, 53))
+            dark_palette.setColor(QPalette.ToolTipBase, Qt.white)
+            dark_palette.setColor(QPalette.ToolTipText, Qt.white)
+            dark_palette.setColor(QPalette.Text, Qt.white)
+            dark_palette.setColor(QPalette.Button, QColor(53, 53, 53))
+            dark_palette.setColor(QPalette.ButtonText, Qt.white)
+            dark_palette.setColor(QPalette.BrightText, Qt.red)
+            dark_palette.setColor(QPalette.Highlight, QColor(142, 45, 197).lighter())
+            dark_palette.setColor(QPalette.HighlightedText, Qt.black)
+            app.setPalette(dark_palette)
+            app.setStyleSheet("QToolTip { color: white; background-color: black; border: 1px solid white; }")
+        else:
+            app.setStyle(QStyleFactory.create("Fusion"))
+            light_palette = QPalette()
+            light_palette.setColor(QPalette.Window, QColor(245, 245, 245))
+            light_palette.setColor(QPalette.WindowText, Qt.black)
+            light_palette.setColor(QPalette.Base, Qt.white)
+            light_palette.setColor(QPalette.AlternateBase, QColor(235, 235, 235))
+            light_palette.setColor(QPalette.ToolTipBase, Qt.black)
+            light_palette.setColor(QPalette.ToolTipText, Qt.black)
+            light_palette.setColor(QPalette.Text, Qt.black)
+            light_palette.setColor(QPalette.Button, QColor(240, 240, 240))
+            light_palette.setColor(QPalette.ButtonText, Qt.black)
+            light_palette.setColor(QPalette.BrightText, Qt.red)
+            light_palette.setColor(QPalette.Highlight, QColor(76, 163, 224))
+            light_palette.setColor(QPalette.HighlightedText, Qt.white)
+            app.setPalette(light_palette)
+            app.setStyleSheet("QToolTip { color: black; background-color: white; border: 1px solid black; }")
+        if not init:
+            self.settings.setValue("dark_mode", dark)
+        self.update_dark_icon(dark)
+
+    def toggle_all_categories(self, state):
+        if self.select_all_checkbox.isChecked():
+            for cb in self.category_checkboxes.values():
+                cb.setChecked(True)
+        else:
+            for cb in self.category_checkboxes.values():
+                cb.setChecked(False)
+
+    def browse_source(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select Source Folder", str(Path.home()))
+        if folder:
+            self.source_path.setText(folder)
+            file_count = len([f for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f))])
+            self.status_label.setText(f"✅ Source selected: {folder} ({file_count} files found)")
+            self.source_path.setText(folder)
+            file_count = len([f for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f))])
+            self.status_label.setText(f"✅ Source selected: {folder} ({file_count} files found)")
+
+    def browse_destination(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select Destination Folder", str(Path.home()))
+        if folder:
+            self.dest_path.setText(folder)
+            self.status_label.setText(f"📤 Destination selected: {folder}")
+            self.dest_path.setText(folder)
+            self.status_label.setText(f"📤 Destination selected: {folder}")
+
+    def organize_files(self, dry_run=False):
+        src = self.source_path.text()
+        dst = self.dest_path.text()
+        if not os.path.isdir(src) or not os.path.isdir(dst):
+            QMessageBox.critical(self, "Error", "Invalid source or destination folder.")
+            return
+
+        selected = [name for name, cb in self.category_checkboxes.items() if cb.isChecked()]
+        if not selected:
+            QMessageBox.warning(self, "No Selection", "Please select at least one category.")
+            return
+
+        moved = 0
+        moved_files = []
+        all_files = [f for f in os.listdir(src) if os.path.isfile(os.path.join(src, f))]
+        self.progress.setMaximum(len(all_files))
+        self.progress.setValue(0)
+
+        for i, file_name in enumerate(all_files):
+            file_path = os.path.join(src, file_name)
+            ext = os.path.splitext(file_name)[1].lower()
+            for group in CATEGORY_MAP.values():
+                for cat_name, exts in group.items():
+                    if cat_name in selected and ext in exts:
+                        dest_dir = os.path.join(dst, cat_name)
+                        os.makedirs(dest_dir, exist_ok=True)
+                        if self.sort_by_ext_checkbox.isChecked():
+                            ext_folder = ext.lstrip(".")
+                            dest_dir = os.path.join(dest_dir, ext_folder)
+                        elif self.sort_by_date_checkbox.isChecked():
+                            year = str(Path(file_path).stat().st_mtime_ns)[:4]  # crude year
+                            dest_dir = os.path.join(dest_dir, year)
+                        dest_file = os.path.join(dest_dir, file_name)
+                        try:
+                            if not dry_run:
+                                shutil.move(file_path, dest_file)
+                        except shutil.Error as e:
+                            QMessageBox.warning(self, "Move Error", f"Failed to move {file_name}: {e}")
+                            continue
+                        moved += 1
+                        moved_files.append(dest_file)
+                        break
+            self.progress.setValue(i + 1)
+
+        self.status_label.setText(f"Status: Moved {moved} file(s).")
+        if moved_files:
+            preview_files = moved_files if not dry_run else moved_files
+            dlg = PreviewDialog(preview_files, src, dst)
+            dlg.exec()
+        self.save_settings()
+
+    def save_settings(self):
+        self.settings.setValue("source_path", self.source_path.text())
+        self.settings.setValue("dest_path", self.dest_path.text())
+        for cat, cb in self.category_checkboxes.items():
+            self.settings.setValue(f"cat_{cat}", cb.isChecked())
+
+    def reset_to_defaults(self):
+        self.source_path.clear()
+        self.dest_path.clear()
+        for cb in self.category_checkboxes.values():
+            cb.setChecked(True)
+        self.select_all_checkbox.setChecked(True)
+        self.dark_mode_btn.setChecked(True)
+        self.toggle_dark_mode()
+        self.settings.clear()
+        self.status_label.setText("Status: Reset to defaults")
+
+    def restore_settings(self):
+        self.source_path.setText(self.settings.value("source_path", ""))
+        self.dest_path.setText(self.settings.value("dest_path", ""))
+        for cat, cb in self.category_checkboxes.items():
+            cb.setChecked(self.settings.value(f"cat_{cat}", "true") == "true")
+        self.select_all_checkbox.setChecked(True)
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    settings = QSettings("FileOrganizer", "Config")
+    if settings.value("dark_mode") is None:
+        settings.setValue("dark_mode", True)
+    window = FileOrganizerApp()
+    window.show()
+    sys.exit(app.exec())
