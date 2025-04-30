@@ -2,11 +2,9 @@
 File Organizer Python Project 
 File Organizer 2.0
 
-🧩 Overview
 
 File Organizer 2.0 is a modern Python desktop application for Windows that helps users quickly organize files into folders by type. Built with PySide6, it provides a sleek, wizard-driven interface ideal for novice and advanced users alike.
 
-🚀 Features
 
 Step-by-step wizard interface for easy file organization
 
@@ -18,21 +16,20 @@ Uses system folders (like Downloads) as default paths for convenience
 
 Dark mode UI for professional and accessible look
 
-📦 Requirements
 
-Python 3.9+
+#Python 3.9+
 
-PySide6
+#PySide6
 
 To install requirements:
 
 pip install PySide6
 
-🛠️ How to Run
+#How to Run
 
 python "File Organizer 2.0.py"
 
-🧱 Build to Executable (Optional)
+Build to Executable (Optional)
 
 You can bundle this app as an .exe file using PyInstaller:
 
@@ -42,7 +39,7 @@ Make sure pyinstaller is installed:
 
 pip install pyinstaller
 
-📁 Categories Used
+#Categories Used
 
 Documents: PDFs, Word, Excel, PowerPoint, Text, Markdown, Ebooks
 
@@ -54,7 +51,7 @@ Archives: ZIPs, RARs, Virtual Machine files
 
 Other: Fonts, Installers, Email, Database
 
-🙋‍♂️ How It Works
+##How It Works
 
 Launch the app
 
@@ -68,15 +65,15 @@ Select file types to sort
 
 Click Organize to perform the sorting
 
-🔐 License
+ #License
 
 This tool is provided as-is for educational and personal use.
 
-🤝 Contributing
+# Contributing
 
 Have a feature idea or found a bug? Feel free to fork and contribute!
 
-🧠 Author
+#Author
 
 Built with by Victor Peralta 
 
